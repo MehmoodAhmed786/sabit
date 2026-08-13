@@ -96,6 +96,15 @@ export function useTodayPrayers(userId: string | undefined) {
         }
       }
     }
+
+    const midnight = new Date()
+    midnight.setHours(24, 0, 0, 0)
+    const midnightDelay = midnight.getTime() - now
+    if (midnightDelay > 0 && midnightDelay <= MAX_PRAYER_WINDOW_MS) {
+      missTimersRef.current.push(window.setTimeout(() => {
+        runMissCheck({ banner: true })
+      }, midnightDelay + 500))
+    }
   }, [userId, runMissCheck])
 
   const reload = useCallback(async () => {

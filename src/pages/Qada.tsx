@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDisplayPrayerName } from '../lib/database'
 import { reconcileMissedPrayers } from '../lib/prayerTracking'
+import { markQadaMadeUp } from '../lib/progressStats'
 
 type QadaRecord = {
   id: string
@@ -84,9 +85,9 @@ export default function Qada() {
     const ok = window.confirm(`Mark ${toDisplayPrayerName(r.prayer_name)} from ${new Date(r.original_date).toLocaleDateString()} as made up?`)
     if (!ok) return
     try {
-      const { error } = await supabase.from('qada_records').update({ status: 'made_up', made_up_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', r.id)
-      if (error) throw error
-      window.dispatchEvent(new Event('sabit-prayer-updated'))
+      const user = (await supabase.auth.getUser()).data.user
+      if (!user) throw new Error('Not signed in')
+      await markQadaMadeUp(user.id, r.id)
       fetchRecords()
     } catch (e: any) {
       alert('Could not mark as made up: ' + (e.message || e))

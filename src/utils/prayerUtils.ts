@@ -52,16 +52,21 @@ function getCoordinates(): Promise<Coordinates | null> {
   })
 }
 
+function endOfCalendarDay(date: Date) {
+  const end = new Date(date)
+  end.setDate(end.getDate() + 1)
+  end.setHours(0, 0, 0, 0)
+  return end
+}
+
 function buildSchedule(coords: Coordinates, date: Date): PrayerSchedule[] {
   const params = CalculationMethod.MuslimWorldLeague()
   params.madhab = Madhab.Shafi
   const times = new PrayerTimes(coords, date, params)
-  const tomorrow = new Date(date)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const nextTimes = new PrayerTimes(coords, tomorrow, params)
 
   const starts = [times.fajr, times.dhuhr, times.asr, times.maghrib, times.isha]
-  const ends = [times.dhuhr, times.asr, times.maghrib, times.isha, nextTimes.fajr]
+  // Isha ends at midnight — new calendar day starts on the Today screen
+  const ends = [times.dhuhr, times.asr, times.maghrib, times.isha, endOfCalendarDay(date)]
 
   return PRAYER_KEYS.map((key, i) => ({
     key,
@@ -80,11 +85,7 @@ function buildFallbackSchedule(): PrayerSchedule[] {
     starts[2],
     starts[3],
     starts[4],
-    (() => {
-      const fajr = new Date(starts[0])
-      fajr.setDate(fajr.getDate() + 1)
-      return fajr
-    })(),
+    endOfCalendarDay(new Date()),
   ]
   return PRAYER_KEYS.map((key, i) => ({
     key,

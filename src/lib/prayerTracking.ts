@@ -201,10 +201,9 @@ export async function cleanupBulkAutoMisses(userId: string, now = new Date()): P
 }
 
 /**
- * Auto-miss only:
- * - Today: prayers whose window has ended (user is actively on the app today)
- * - Yesterday: Isha only (its window ends at today's Fajr)
- * Manual "Mark as Missed" still works for any date via Prayer Details.
+ * Auto-miss:
+ * - Today: prayers whose window has ended
+ * - Yesterday: Isha only (window ends at midnight when the Today screen rolls to a new day)
  */
 export async function reconcileMissedPrayers(userId: string, now = new Date()): Promise<string[]> {
   const newlyMissed: string[] = []
@@ -243,7 +242,7 @@ export async function reconcileMissedPrayers(userId: string, now = new Date()): 
   return newlyMissed
 }
 
-/** Max ms until next Fajr after Isha — allow overnight timer (Isha → Fajr). */
+/** Max ms for a prayer miss timer (Isha → midnight is the longest same-day window). */
 export const MAX_PRAYER_WINDOW_MS = 36 * 60 * 60 * 1000
 
 export function toListPrayer(p: PrayerSchedule) {
