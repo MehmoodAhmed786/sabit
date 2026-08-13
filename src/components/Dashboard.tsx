@@ -18,7 +18,6 @@ export default function Dashboard({ user }: { user: any }) {
   const userId = user?.user?.id as string | undefined
   const {
     prayers,
-    prayerDates,
     loading: prayersLoading,
     missedAlert,
     dismissMissedAlert,
@@ -130,7 +129,7 @@ export default function Dashboard({ user }: { user: any }) {
         ) : (
           <PrayerList
             prayers={prayers}
-            onTap={(p) => navigate(`/prayer/${prayerDates[p.key] ?? today}/${p.key}`)}
+            onTap={(p) => navigate(`/prayer/${today}/${p.key}`)}
           />
         )}
 

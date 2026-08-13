@@ -169,7 +169,7 @@ export function prayersNeedingMissCheck(
   })
 }
 
-/** Remove bulk auto-misses from the old 7-day reconcile (never user-tracked days). */
+/** Remove bulk auto-misses from the old 7-day reconcile (days before yesterday only). */
 export async function cleanupBulkAutoMisses(userId: string, now = new Date()): Promise<number> {
   const todayStr = todayDateString(now)
   const yesterdayStr = localDateString(addDays(parseLocalDate(todayStr), -1))
@@ -184,11 +184,7 @@ export async function cleanupBulkAutoMisses(userId: string, now = new Date()): P
   let removed = 0
   for (const row of missed ?? []) {
     const dateStr = String(row.date)
-    const shouldRemove =
-      dateStr < yesterdayStr ||
-      (dateStr === yesterdayStr && row.prayer_name !== 'isha')
-
-    if (!shouldRemove) continue
+    if (dateStr >= yesterdayStr) continue
 
     await supabase
       .from('qada_records')
