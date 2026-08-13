@@ -7,12 +7,7 @@ export default function Contact() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const to = 'support@sabit.app'
-    const subject = encodeURIComponent('Sabit feedback from ' + (name || email || 'web'))
-    const body = encodeURIComponent(`${message}
-
-Name: ${name}
-Email: ${email}`)
+    
       ;(async () => {
         try {
           const resp = await fetch('/api/contact', {
@@ -27,7 +22,7 @@ Email: ${email}`)
           setMessage('')
         } catch (err) {
           console.error(err)
-          alert('Failed to send message. Please try again later or email support@sabit.app')
+          alert('Failed to send message. Please try again later or email joblessveelawger786@gmail.com')
         }
       })()
   }
@@ -37,7 +32,7 @@ Email: ${email}`)
       <h2>Contact</h2>
       <p className="muted" style={{ maxWidth: 640 }}>
         We'd love to hear from you — feedback, bug reports, or ideas to improve Sabit.
-        Use the form below to open your email client, or email us directly at <strong>support@sabit.app</strong>.
+        Use the form below to send us a message, or email us directly at <strong>joblessveelawger786@gmail.com</strong>.
       </p>
 
       <form className="contact-form" onSubmit={handleSubmit} style={{ maxWidth: 640, marginTop: 16 }}>
