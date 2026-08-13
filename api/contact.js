@@ -1,7 +1,7 @@
-const sgMail = require('@sendgrid/mail')
-const nodemailer = require('nodemailer')
+import sgMail from '@sendgrid/mail'
+import nodemailer from 'nodemailer'
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
@@ -41,6 +41,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({ ok: true })
   } catch (err) {
     console.error('contact api error', err)
-    return res.status(500).json({ error: 'Failed to send message' })
+    const detail = err && err.message ? String(err.message) : 'Failed to send message'
+    return res.status(500).json({ error: 'Failed to send message', detail })
   }
 }
