@@ -138,7 +138,33 @@ npm run build
 npm run preview
 ```
 
-Deploy the `dist/` folder to [Vercel](https://vercel.com), [Netlify](https://netlify.com), or any static host. Set the same `VITE_*` environment variables in your host's dashboard.
+Deploy the `dist/` folder to [Vercel](https://vercel.com), [Netlify](https://netlify.com), or any static host.
+
+### Vercel deployment
+
+1. **Import** your GitHub repo on [vercel.com/new](https://vercel.com/new)
+2. **Framework preset:** Vite (auto-detected)
+3. **Environment variables** (Project → Settings → Environment Variables):
+
+   | Name | Value |
+   |------|-------|
+   | `VITE_SUPABASE_URL` | Your Supabase project URL |
+   | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key |
+
+   Apply to **Production**, **Preview**, and **Development**. Then **Redeploy**.
+
+4. **Supabase Auth URLs** (Supabase Dashboard → Authentication → URL Configuration):
+
+   | Setting | Value |
+   |---------|-------|
+   | Site URL | `https://your-app.vercel.app` |
+   | Redirect URLs | `https://your-app.vercel.app/**` |
+
+   Add `http://localhost:5173/**` too if you still develop locally.
+
+5. **`vercel.json`** is included — it routes all paths to `index.html` so React Router works on refresh (e.g. `/qada`, `/profile`).
+
+If the app shows **"Configuration required"**, env vars are missing on Vercel — add them and redeploy.
 
 ## Push to GitHub (step-by-step)
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import SignIn from './SignIn'
-import { supabase } from './lib/supabaseClient'
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient'
 import { ensureProfile } from './lib/database'
 import { ensureNotificationSettings } from './lib/notificationSettings'
 import Dashboard from './components/Dashboard'
@@ -18,40 +18,62 @@ import ChallengeDetails from './pages/ChallengeDetails'
 import AppLayout from './components/AppLayout'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
+function ConfigError() {
+  return (
+    <div className="page-content" style={{ paddingTop: 48, textAlign: 'center' }}>
+      <h2>Configuration required</h2>
+      <p className="muted" style={{ maxWidth: 420, margin: '12px auto' }}>
+        Supabase environment variables are missing. On Vercel, add{' '}
+        <strong>VITE_SUPABASE_URL</strong> and <strong>VITE_SUPABASE_ANON_KEY</strong> in
+        Project Settings → Environment Variables, then redeploy.
+      </p>
+    </div>
+  )
+}
+
+async function handleOAuthCallback() {
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('code')
+  if (!code) return false
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code)
+  if (error) {
+    console.error('OAuth callback error', error)
+    return false
+  }
+
+  window.history.replaceState({}, document.title, window.location.pathname)
+  return true
+}
+
 function App() {
   const [session, setSession] = useState<any | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false)
+      return
+    }
+
     const init = async () => {
       try {
-        if (window.location.search || window.location.hash) {
-          try {
-            const authAny: any = supabase.auth
-            if (typeof authAny.getSessionFromUrl === 'function') {
-              const { data, error } = await authAny.getSessionFromUrl()
-              if (error) console.debug('getSessionFromUrl error', error)
-              if (data?.session) {
-                setSession(data.session)
-                window.history.replaceState({}, document.title, window.location.pathname)
-                return
-              }
-            }
-          } catch (e) {
-            console.debug('getSessionFromUrl dynamic call failed', e)
-          }
+        await handleOAuthCallback()
+        const { data } = await supabase.auth.getSession()
+        setSession(data.session)
+        if (data.session) {
+          await ensureProfile()
+          await ensureNotificationSettings(data.session.user.id)
         }
       } catch (e) {
-        console.debug('error handling OAuth redirect', e)
-      }
-
-      const { data } = await supabase.auth.getSession()
-      setSession(data.session)
-      if (data.session) {
-        await ensureProfile()
-        await ensureNotificationSettings(data.session.user.id)
+        console.error('Auth init failed', e)
+      } finally {
+        setAuthLoading(false)
       }
     }
+
     init()
+
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, s) => {
       setSession(s)
       if (s) {
@@ -59,8 +81,19 @@ function App() {
         await ensureNotificationSettings(s.user.id)
       }
     })
+
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  if (!isSupabaseConfigured) return <ConfigError />
+
+  if (authLoading) {
+    return (
+      <div className="page-content" style={{ paddingTop: 48, textAlign: 'center' }}>
+        <p className="muted">Loading…</p>
+      </div>
+    )
+  }
 
   if (!session) return <SignIn onSignedIn={(s) => setSession(s)} />
 
