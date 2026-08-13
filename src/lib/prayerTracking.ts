@@ -169,37 +169,80 @@ export function prayersNeedingMissCheck(
   })
 }
 
-/** Isha ends at next Fajr — reconcile recent days so missed Isha reaches Qada. */
-const RECONCILE_LOOKBACK_DAYS = 7
+/** Remove bulk auto-misses from the old 7-day reconcile (never user-tracked days). */
+export async function cleanupBulkAutoMisses(userId: string, now = new Date()): Promise<number> {
+  const todayStr = todayDateString(now)
+  const yesterdayStr = localDateString(addDays(parseLocalDate(todayStr), -1))
 
+  const { data: missed, error } = await supabase
+    .from('prayer_records')
+    .select('id, date, prayer_name')
+    .eq('user_id', userId)
+    .eq('status', 'missed')
+  if (error) throw error
+
+  let removed = 0
+  for (const row of missed ?? []) {
+    const dateStr = String(row.date)
+    const shouldRemove =
+      dateStr < yesterdayStr ||
+      (dateStr === yesterdayStr && row.prayer_name !== 'isha')
+
+    if (!shouldRemove) continue
+
+    await supabase
+      .from('qada_records')
+      .delete()
+      .eq('user_id', userId)
+      .eq('original_date', dateStr)
+      .eq('prayer_name', row.prayer_name)
+      .eq('status', 'pending')
+
+    await supabase.from('prayer_records').delete().eq('id', row.id)
+    removed++
+  }
+  return removed
+}
+
+/**
+ * Auto-miss only:
+ * - Today: prayers whose window has ended (user is actively on the app today)
+ * - Yesterday: Isha only (its window ends at today's Fajr)
+ * Manual "Mark as Missed" still works for any date via Prayer Details.
+ */
 export async function reconcileMissedPrayers(userId: string, now = new Date()): Promise<string[]> {
   const newlyMissed: string[] = []
-  const today = parseLocalDate(todayDateString(now))
-  const datesToCheck = new Set<string>()
+  const todayStr = todayDateString(now)
+  const yesterdayStr = localDateString(addDays(parseLocalDate(todayStr), -1))
 
-  for (let i = RECONCILE_LOOKBACK_DAYS; i >= 0; i--) {
-    datesToCheck.add(localDateString(addDays(today, -i)))
+  await cleanupBulkAutoMisses(userId, now)
+
+  const todaySchedule = await getPrayerScheduleForDate(parseLocalDate(todayStr))
+  const todayRecords = await fetchTodayPrayerRecords(userId, todayStr)
+  for (const p of prayersNeedingMissCheck(todaySchedule, todayRecords, now)) {
+    try {
+      const isNew = await markPrayerMissed(userId, p, todayStr)
+      if (isNew) newlyMissed.push(p.name)
+    } catch (e) {
+      console.error('reconcile miss failed', todayStr, p.key, e)
+    }
   }
 
-  for (const dateStr of datesToCheck) {
-    const schedule = await getPrayerScheduleForDate(parseLocalDate(dateStr))
-    const records = await fetchTodayPrayerRecords(userId, dateStr)
-    const toMiss = prayersNeedingMissCheck(schedule, records, now)
-
-    for (const p of toMiss) {
+  const ySchedule = await getPrayerScheduleForDate(parseLocalDate(yesterdayStr))
+  const yIsha = ySchedule.find((p) => p.key === 'isha')
+  if (yIsha) {
+    const yRecords = await fetchTodayPrayerRecords(userId, yesterdayStr)
+    if (prayersNeedingMissCheck([yIsha], yRecords, now).length) {
       try {
-        const isNew = await markPrayerMissed(userId, p, dateStr)
-        if (isNew) newlyMissed.push(p.name)
+        const isNew = await markPrayerMissed(userId, yIsha, yesterdayStr)
+        if (isNew) newlyMissed.push(yIsha.name)
       } catch (e) {
-        console.error('reconcile miss failed', dateStr, p.key, e)
+        console.error('reconcile miss failed', yesterdayStr, 'isha', e)
       }
     }
   }
 
-  const repaired = await backfillQadaFromMissedRecords(userId)
-  if (repaired > 0 && newlyMissed.length === 0) {
-    newlyMissed.push('Qada')
-  }
+  await backfillQadaFromMissedRecords(userId)
 
   return newlyMissed
 }
