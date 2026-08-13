@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDisplayPrayerName } from '../lib/database'
+import { reconcileMissedPrayers } from '../lib/prayerTracking'
 
 type QadaRecord = {
   id: string
@@ -36,6 +37,7 @@ export default function Qada() {
         setLoading(false)
         return
       }
+      await reconcileMissedPrayers(user.id)
       const { data, error } = await supabase
         .from('qada_records')
         .select('*')

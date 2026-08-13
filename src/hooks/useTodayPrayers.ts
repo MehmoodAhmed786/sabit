@@ -15,19 +15,70 @@ import {
   getPrayerScheduleForToday,
   localDateString,
   parseLocalDate,
+  resolvePrayerStatus,
   todayDateString,
   type PrayerSchedule,
 } from '../utils/prayerUtils'
 
 export type MissedAlert = { id: string; names: string[] }
 
+/** Before Fajr, Isha on the Today list is last night's (yesterday's date). */
+async function buildTodayDisplaySchedule(
+  userId: string,
+  now = new Date(),
+): Promise<{ schedule: PrayerSchedule[]; prayerDates: Record<string, string> }> {
+  const today = todayDateString(now)
+  const baseSchedule = await getPrayerScheduleForToday()
+  const prayerDates: Record<string, string> = {}
+  for (const p of baseSchedule) prayerDates[p.key] = today
+
+  const fajr = baseSchedule.find((p) => p.key === 'fajr')
+  const beforeFajr = fajr ? now < fajr.startsAt : false
+
+  if (!beforeFajr) {
+    const records = await fetchTodayPrayerRecords(userId, today)
+    return { schedule: mergeScheduleWithRecords(baseSchedule, records, now), prayerDates }
+  }
+
+  const yesterday = localDateString(addDays(parseLocalDate(today), -1))
+  const [ySchedule, todayRecords, yRecords] = await Promise.all([
+    getPrayerScheduleForDate(parseLocalDate(yesterday)),
+    fetchTodayPrayerRecords(userId, today),
+    fetchTodayPrayerRecords(userId, yesterday),
+  ])
+  const yIsha = ySchedule.find((p) => p.key === 'isha')
+  if (!yIsha) {
+    return { schedule: mergeScheduleWithRecords(baseSchedule, todayRecords, now), prayerDates }
+  }
+
+  prayerDates.isha = yesterday
+  const schedule = baseSchedule
+    .filter((p) => p.key !== 'isha')
+    .concat([
+      {
+        ...yIsha,
+        status: resolvePrayerStatus(yIsha, yRecords.get('isha'), now),
+      },
+    ])
+
+  const merged = schedule.map((p) =>
+    p.key === 'isha'
+      ? p
+      : { ...p, status: resolvePrayerStatus(p, todayRecords.get(p.key), now) },
+  )
+
+  return { schedule: merged, prayerDates }
+}
+
 export function useTodayPrayers(userId: string | undefined) {
   const [prayers, setPrayers] = useState<Prayer[]>([])
   const [schedule, setSchedule] = useState<PrayerSchedule[]>([])
+  const [prayerDates, setPrayerDates] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [missedAlert, setMissedAlert] = useState<MissedAlert | null>(null)
   const recordsRef = useRef<Map<string, 'upcoming' | 'completed' | 'missed'>>(new Map())
   const scheduleRef = useRef<PrayerSchedule[]>([])
+  const prayerDatesRef = useRef<Record<string, string>>({})
   const missTimersRef = useRef<number[]>([])
 
   const clearMissTimers = () => {
@@ -35,9 +86,11 @@ export function useTodayPrayers(userId: string | undefined) {
     missTimersRef.current = []
   }
 
-  const applyLocal = useCallback((merged: PrayerSchedule[]) => {
+  const applyLocal = useCallback((merged: PrayerSchedule[], dates: Record<string, string>) => {
     scheduleRef.current = merged
+    prayerDatesRef.current = dates
     setSchedule(merged)
+    setPrayerDates(dates)
     setPrayers(merged.map(toListPrayer))
   }, [])
 
@@ -50,16 +103,19 @@ export function useTodayPrayers(userId: string | undefined) {
       window.dispatchEvent(new Event('sabit-prayer-updated'))
     }
 
-    const date = todayDateString(now)
-    recordsRef.current = await fetchTodayPrayerRecords(userId, date)
-    const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current, now)
-    applyLocal(merged)
+    const { schedule: display, prayerDates: dates } = await buildTodayDisplaySchedule(userId, now)
+    const today = todayDateString(now)
+    recordsRef.current = await fetchTodayPrayerRecords(userId, today)
+    applyLocal(display, dates)
 
     if (newlyMissed.length && opts.banner) {
-      setMissedAlert({
-        id: `${Date.now()}-${newlyMissed.join(',')}`,
-        names: newlyMissed,
-      })
+      const names = newlyMissed.filter((n) => n !== 'Qada')
+      if (names.length) {
+        setMissedAlert({
+          id: `${Date.now()}-${names.join(',')}`,
+          names,
+        })
+      }
     }
 
     return newlyMissed.length
@@ -70,28 +126,38 @@ export function useTodayPrayers(userId: string | undefined) {
     clearMissTimers()
     const now = Date.now()
     const today = todayDateString()
-    const yesterday = localDateString(addDays(parseLocalDate(today), -1))
 
-    const schedules: { date: string; slots: PrayerSchedule[] }[] = [
-      { date: today, slots: scheduleRef.current },
-      { date: yesterday, slots: await getPrayerScheduleForDate(parseLocalDate(yesterday)) },
-    ]
-
-    for (const { date, slots } of schedules) {
+    for (const p of scheduleRef.current) {
+      const date = prayerDatesRef.current[p.key] ?? today
       const records = date === today
         ? recordsRef.current
         : await fetchTodayPrayerRecords(userId, date)
 
-      for (const p of slots) {
-        const db = records.get(p.key)
-        if (db === 'completed' || db === 'missed') continue
+      const db = records.get(p.key)
+      if (db === 'completed' || db === 'missed') continue
 
-        const endDelay = p.endsAt.getTime() - now
-        // Isha window spans until next Fajr (may be next calendar day)
-        if (endDelay > 0 && endDelay <= MAX_PRAYER_WINDOW_MS) {
-          missTimersRef.current.push(window.setTimeout(() => {
-            runMissCheck({ banner: true })
-          }, endDelay + 500))
+      const endDelay = p.endsAt.getTime() - now
+      if (endDelay > 0 && endDelay <= MAX_PRAYER_WINDOW_MS) {
+        missTimersRef.current.push(window.setTimeout(() => {
+          runMissCheck({ banner: true })
+        }, endDelay + 500))
+      }
+    }
+
+    const yesterday = localDateString(addDays(parseLocalDate(today), -1))
+    if (prayerDatesRef.current.isha === today) {
+      const ySchedule = await getPrayerScheduleForDate(parseLocalDate(yesterday))
+      const yIsha = ySchedule.find((s) => s.key === 'isha')
+      if (yIsha) {
+        const yRecords = await fetchTodayPrayerRecords(userId, yesterday)
+        const db = yRecords.get('isha')
+        if (db !== 'completed' && db !== 'missed') {
+          const endDelay = yIsha.endsAt.getTime() - now
+          if (endDelay > 0 && endDelay <= MAX_PRAYER_WINDOW_MS) {
+            missTimersRef.current.push(window.setTimeout(() => {
+              runMissCheck({ banner: true })
+            }, endDelay + 500))
+          }
         }
       }
     }
@@ -104,15 +170,11 @@ export function useTodayPrayers(userId: string | undefined) {
     }
     setLoading(true)
     try {
-      const date = todayDateString()
-      const [baseSchedule, records] = await Promise.all([
-        getPrayerScheduleForToday(),
-        fetchTodayPrayerRecords(userId, date),
-      ])
-      recordsRef.current = records
-      scheduleRef.current = baseSchedule
-      const merged = mergeScheduleWithRecords(baseSchedule, records)
-      applyLocal(merged)
+      const now = new Date()
+      const today = todayDateString(now)
+      const { schedule: display, prayerDates: dates } = await buildTodayDisplaySchedule(userId, now)
+      recordsRef.current = await fetchTodayPrayerRecords(userId, today)
+      applyLocal(display, dates)
       await runMissCheck({ banner: true })
       await scheduleMissTimers()
     } catch (e) {
@@ -137,24 +199,30 @@ export function useTodayPrayers(userId: string | undefined) {
 
   useEffect(() => {
     const tick = window.setInterval(() => {
-      const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current)
-      applyLocal(merged)
-      runMissCheck({ banner: true }).then(() => scheduleMissTimers())
+      if (!userId) return
+      buildTodayDisplaySchedule(userId).then(({ schedule: display, prayerDates: dates }) => {
+        applyLocal(display, dates)
+        runMissCheck({ banner: true }).then(() => scheduleMissTimers())
+      })
     }, 60_000)
     return () => window.clearInterval(tick)
-  }, [applyLocal, runMissCheck, scheduleMissTimers])
+  }, [userId, applyLocal, runMissCheck, scheduleMissTimers])
 
   const completePrayer = useCallback(async (prayerKey: string) => {
     if (!userId) return false
     const p = scheduleRef.current.find((x) => x.key === prayerKey)
     if (!p) return false
-    await markPrayerCompleted(userId, p)
-    recordsRef.current.set(prayerKey, 'completed')
-    const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current)
-    applyLocal(merged)
+    const date = prayerDatesRef.current[prayerKey] ?? todayDateString()
+    await markPrayerCompleted(userId, p, date)
+    if (date === todayDateString()) {
+      recordsRef.current.set(prayerKey, 'completed')
+    }
+    const { schedule: display, prayerDates: dates } = await buildTodayDisplaySchedule(userId)
+    applyLocal(display, dates)
     scheduleMissTimers()
     window.dispatchEvent(new Event('sabit-prayer-updated'))
-    return tryIncrementStreakForToday(userId, todayDateString())
+    if (date !== todayDateString()) return false
+    return tryIncrementStreakForToday(userId, date)
   }, [userId, applyLocal, scheduleMissTimers])
 
   const dismissMissedAlert = useCallback(() => setMissedAlert(null), [])
@@ -162,6 +230,7 @@ export function useTodayPrayers(userId: string | undefined) {
   return {
     prayers,
     schedule,
+    prayerDates,
     loading,
     missedAlert,
     dismissMissedAlert,

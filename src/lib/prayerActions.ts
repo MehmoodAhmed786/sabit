@@ -230,18 +230,28 @@ export async function markPrayerMissedAction(userId: string, date: string, praye
 
   const recordId = await upsertPrayerRecord(userId, slot, date, { status: 'missed', completed_at: null })
 
-  const { error: qError } = await supabase.from('qada_records').upsert(
-    {
-      user_id: userId,
-      original_prayer_record_id: recordId,
-      original_date: date,
-      prayer_name: slot.key,
-      status: 'pending',
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,original_date,prayer_name' },
-  )
-  if (qError) throw qError
+  const { data: existingQada } = await supabase
+    .from('qada_records')
+    .select('id, status')
+    .eq('user_id', userId)
+    .eq('original_date', date)
+    .eq('prayer_name', slot.key)
+    .maybeSingle()
+
+  if (existingQada?.status !== 'made_up') {
+    const { error: qError } = await supabase.from('qada_records').upsert(
+      {
+        user_id: userId,
+        original_prayer_record_id: recordId,
+        original_date: date,
+        prayer_name: slot.key,
+        status: 'pending',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,original_date,prayer_name' },
+    )
+    if (qError) throw qError
+  }
 
   emitPrayerUpdated()
 }
