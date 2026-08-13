@@ -295,6 +295,32 @@
   padding: 8px 12px;
   background: #fff;
 }
+
+/* Contact form improvements */
+.page-content .contact-form label {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-content .contact-form input,
+.page-content .contact-form textarea {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font: inherit;
+}
+.page-content .contact-form textarea { min-height: 120px; resize: vertical; }
+.page-content .contact-form .btn {
+  background: #1f7a4f;
+  color: #fff;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
 .page-content button.madeup,
 .qada-screen button.madeup,
 .modal button.madeup {

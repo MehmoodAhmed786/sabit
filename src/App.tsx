@@ -15,6 +15,7 @@ import AddFriend from './pages/AddFriend'
 import FriendRequests from './pages/FriendRequests'
 import CreateChallenge from './pages/CreateChallenge'
 import ChallengeDetails from './pages/ChallengeDetails'
+import Contact from './pages/Contact'
 import AppLayout from './components/AppLayout'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
@@ -112,6 +113,7 @@ function App() {
           <Route path="/friends/requests" element={<FriendRequests />} />
           <Route path="/friends/challenges/create" element={<CreateChallenge />} />
           <Route path="/friends/challenges/:id" element={<ChallengeDetails />} />
+          <Route path="/contact" element={<Contact />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

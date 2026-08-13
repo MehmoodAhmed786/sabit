@@ -19,6 +19,10 @@ export default function BottomNav() {
         <span className="nav-icon" aria-hidden>🏆</span>
         <span>Laqabs</span>
       </NavLink>
+      <NavLink to="/contact" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+        <span className="nav-icon" aria-hidden>✉️</span>
+        <span>Contact</span>
+      </NavLink>
     </nav>
   )
 }
