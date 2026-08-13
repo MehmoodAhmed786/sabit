@@ -3,13 +3,21 @@ import type { Prayer } from '../components/PrayerList'
 import {
   fetchTodayPrayerRecords,
   markPrayerCompleted,
-  markPrayerMissed,
   mergeScheduleWithRecords,
-  prayersNeedingMissCheck,
+  MAX_PRAYER_WINDOW_MS,
+  reconcileMissedPrayers,
   toListPrayer,
 } from '../lib/prayerTracking'
 import { tryIncrementStreakForToday } from '../lib/streaks'
-import { getPrayerScheduleForToday, todayDateString, type PrayerSchedule } from '../utils/prayerUtils'
+import {
+  addDays,
+  getPrayerScheduleForDate,
+  getPrayerScheduleForToday,
+  localDateString,
+  parseLocalDate,
+  todayDateString,
+  type PrayerSchedule,
+} from '../utils/prayerUtils'
 
 export type MissedAlert = { id: string; names: string[] }
 
@@ -33,56 +41,61 @@ export function useTodayPrayers(userId: string | undefined) {
     setPrayers(merged.map(toListPrayer))
   }, [])
 
-  const runMissCheck = useCallback(async (opts: { notify: boolean; banner: boolean }) => {
+  const runMissCheck = useCallback(async (opts: { banner: boolean }) => {
     if (!userId) return 0
     const now = new Date()
-    const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current, now)
-    const toMiss = prayersNeedingMissCheck(merged, recordsRef.current, now)
-    const newlyMissed: string[] = []
-
-    for (const p of toMiss) {
-      try {
-        const isNew = await markPrayerMissed(userId, p)
-        if (isNew) {
-          recordsRef.current.set(p.key, 'missed')
-          newlyMissed.push(p.name)
-        }
-      } catch (e) {
-        console.error('auto-miss failed', p.key, e)
-      }
-    }
+    const newlyMissed = await reconcileMissedPrayers(userId, now)
 
     if (newlyMissed.length) {
-      const refreshed = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current, now)
-      applyLocal(refreshed)
-      if (opts.banner) {
-        setMissedAlert({
-          id: `${Date.now()}-${newlyMissed.join(',')}`,
-          names: newlyMissed,
-        })
-      }
-    } else {
-      applyLocal(merged)
+      window.dispatchEvent(new Event('sabit-prayer-updated'))
+    }
+
+    const date = todayDateString(now)
+    recordsRef.current = await fetchTodayPrayerRecords(userId, date)
+    const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current, now)
+    applyLocal(merged)
+
+    if (newlyMissed.length && opts.banner) {
+      setMissedAlert({
+        id: `${Date.now()}-${newlyMissed.join(',')}`,
+        names: newlyMissed,
+      })
     }
 
     return newlyMissed.length
   }, [userId, applyLocal])
 
-  const scheduleMissTimers = useCallback(() => {
+  const scheduleMissTimers = useCallback(async () => {
+    if (!userId) return
     clearMissTimers()
     const now = Date.now()
-    for (const p of scheduleRef.current) {
-      const db = recordsRef.current.get(p.key)
-      if (db !== 'completed' && db !== 'missed') {
+    const today = todayDateString()
+    const yesterday = localDateString(addDays(parseLocalDate(today), -1))
+
+    const schedules: { date: string; slots: PrayerSchedule[] }[] = [
+      { date: today, slots: scheduleRef.current },
+      { date: yesterday, slots: await getPrayerScheduleForDate(parseLocalDate(yesterday)) },
+    ]
+
+    for (const { date, slots } of schedules) {
+      const records = date === today
+        ? recordsRef.current
+        : await fetchTodayPrayerRecords(userId, date)
+
+      for (const p of slots) {
+        const db = records.get(p.key)
+        if (db === 'completed' || db === 'missed') continue
+
         const endDelay = p.endsAt.getTime() - now
-        if (endDelay > 0 && endDelay <= 24 * 60 * 60 * 1000) {
+        // Isha window spans until next Fajr (may be next calendar day)
+        if (endDelay > 0 && endDelay <= MAX_PRAYER_WINDOW_MS) {
           missTimersRef.current.push(window.setTimeout(() => {
-            runMissCheck({ notify: false, banner: true })
+            runMissCheck({ banner: true })
           }, endDelay + 500))
         }
       }
     }
-  }, [runMissCheck])
+  }, [userId, runMissCheck])
 
   const reload = useCallback(async () => {
     if (!userId) {
@@ -100,8 +113,8 @@ export function useTodayPrayers(userId: string | undefined) {
       scheduleRef.current = baseSchedule
       const merged = mergeScheduleWithRecords(baseSchedule, records)
       applyLocal(merged)
-      await runMissCheck({ notify: false, banner: true })
-      scheduleMissTimers()
+      await runMissCheck({ banner: true })
+      await scheduleMissTimers()
     } catch (e) {
       console.error('load prayers failed', e)
     } finally {
@@ -126,7 +139,7 @@ export function useTodayPrayers(userId: string | undefined) {
     const tick = window.setInterval(() => {
       const merged = mergeScheduleWithRecords(scheduleRef.current, recordsRef.current)
       applyLocal(merged)
-      runMissCheck({ notify: false, banner: true }).then(() => scheduleMissTimers())
+      runMissCheck({ banner: true }).then(() => scheduleMissTimers())
     }, 60_000)
     return () => window.clearInterval(tick)
   }, [applyLocal, runMissCheck, scheduleMissTimers])

@@ -2,6 +2,10 @@ import { supabase } from './supabaseClient'
 import {
   type PrayerSchedule,
   type PrayerStatus,
+  addDays,
+  getPrayerScheduleForDate,
+  localDateString,
+  parseLocalDate,
   resolvePrayerStatus,
   todayDateString,
 } from '../utils/prayerUtils'
@@ -117,6 +121,33 @@ export function prayersNeedingMissCheck(
     return now >= p.endsAt
   })
 }
+
+/** Isha ends at next Fajr — also reconcile yesterday so missed Isha reaches Qada. */
+export async function reconcileMissedPrayers(userId: string, now = new Date()): Promise<string[]> {
+  const newlyMissed: string[] = []
+  const today = parseLocalDate(todayDateString(now))
+  const datesToCheck = [localDateString(addDays(today, -1)), localDateString(today)]
+
+  for (const dateStr of datesToCheck) {
+    const schedule = await getPrayerScheduleForDate(parseLocalDate(dateStr))
+    const records = await fetchTodayPrayerRecords(userId, dateStr)
+    const toMiss = prayersNeedingMissCheck(schedule, records, now)
+
+    for (const p of toMiss) {
+      try {
+        const isNew = await markPrayerMissed(userId, p, dateStr)
+        if (isNew) newlyMissed.push(p.name)
+      } catch (e) {
+        console.error('reconcile miss failed', dateStr, p.key, e)
+      }
+    }
+  }
+
+  return newlyMissed
+}
+
+/** Max ms until next Fajr after Isha — allow overnight timer (Isha → Fajr). */
+export const MAX_PRAYER_WINDOW_MS = 36 * 60 * 60 * 1000
 
 export function toListPrayer(p: PrayerSchedule) {
   return {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import BottomNav from './BottomNav'
 import { supabase } from '../lib/supabaseClient'
+import { reconcileMissedPrayers } from '../lib/prayerTracking'
 import { useNotificationScheduler } from '../hooks/useNotificationScheduler'
 import { useSocialNotifications } from '../hooks/useSocialNotifications'
 import type { NotificationRoute } from '../lib/notifications'
@@ -22,6 +23,13 @@ function NotificationShell() {
 
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!userId) return
+    reconcileMissedPrayers(userId).then((missed) => {
+      if (missed.length) window.dispatchEvent(new Event('sabit-prayer-updated'))
+    })
+  }, [userId])
 
   useEffect(() => {
     const onNavigate = (e: Event) => {
