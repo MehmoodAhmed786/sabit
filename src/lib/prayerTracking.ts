@@ -170,7 +170,7 @@ export function prayersNeedingMissCheck(
 }
 
 /** Remove bulk auto-misses from the old 7-day reconcile (days before yesterday only). */
-export async function cleanupBulkAutoMisses(userId: string, now = new Date()): Promise<number> {
+export async function cleanupBulkAutoMisses(_userId: string, _now = new Date()): Promise<number> {
   // Disabled: historically this removed old auto-missed records and
   // unintentionally deleted legitimate Qada entries. Preserve all
   // historical qada/prayer records so users can view past Qada.
