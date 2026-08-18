@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDisplayPrayerName } from '../lib/database'
-import { reconcileMissedPrayers } from '../lib/prayerTracking'
+import { reconcileMissedPrayers, backfillQadaFromMissedRecords } from '../lib/prayerTracking'
 import { markQadaMadeUp } from '../lib/progressStats'
 
 type QadaRecord = {
@@ -63,6 +63,18 @@ export default function Qada() {
     }
   }, [])
 
+  const runBackfill = async () => {
+    try {
+      const user = (await supabase.auth.getUser()).data.user
+      if (!user) return alert('Not signed in')
+      const repaired = await backfillQadaFromMissedRecords(user.id)
+      await fetchRecords()
+      alert(`Backfilled ${repaired} qada records (if any).`)
+    } catch (e: any) {
+      alert('Backfill failed: ' + (e.message || e))
+    }
+  }
+
   const pending = useMemo(() => records?.filter(r => r.status === 'pending') || [], [records])
   const completed = useMemo(() => records?.filter(r => r.status === 'made_up') || [], [records])
 
@@ -121,7 +133,10 @@ export default function Qada() {
           <h1>Qada</h1>
           <p className="muted">Keep track of prayers you still need to make up.</p>
         </div>
-        <button className="info">i</button>
+        <div style={{display:'flex',gap:8}}>
+          <button className="info">i</button>
+          <button onClick={runBackfill} className="info">Backfill</button>
+        </div>
       </header>
 
       <section className="qada-summary">
