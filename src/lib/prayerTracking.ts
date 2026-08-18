@@ -171,33 +171,10 @@ export function prayersNeedingMissCheck(
 
 /** Remove bulk auto-misses from the old 7-day reconcile (days before yesterday only). */
 export async function cleanupBulkAutoMisses(userId: string, now = new Date()): Promise<number> {
-  const todayStr = todayDateString(now)
-  const yesterdayStr = localDateString(addDays(parseLocalDate(todayStr), -1))
-
-  const { data: missed, error } = await supabase
-    .from('prayer_records')
-    .select('id, date, prayer_name')
-    .eq('user_id', userId)
-    .eq('status', 'missed')
-  if (error) throw error
-
-  let removed = 0
-  for (const row of missed ?? []) {
-    const dateStr = String(row.date)
-    if (dateStr >= yesterdayStr) continue
-
-    await supabase
-      .from('qada_records')
-      .delete()
-      .eq('user_id', userId)
-      .eq('original_date', dateStr)
-      .eq('prayer_name', row.prayer_name)
-      .eq('status', 'pending')
-
-    await supabase.from('prayer_records').delete().eq('id', row.id)
-    removed++
-  }
-  return removed
+  // Disabled: historically this removed old auto-missed records and
+  // unintentionally deleted legitimate Qada entries. Preserve all
+  // historical qada/prayer records so users can view past Qada.
+  return 0
 }
 
 /**
