@@ -39,12 +39,34 @@ export default function Qada() {
         return
       }
       await reconcileMissedPrayers(user.id)
-      const { data, error } = await supabase
-        .from('qada_records')
-        .select('*')
-        .eq('user_id', user.id)
+      const [{ data, error }, { data: missedRows }] = await Promise.all([
+        supabase.from('qada_records').select('*').eq('user_id', user.id),
+        // fetch missed prayer_records as a fallback source for qada
+        supabase.from('prayer_records').select('id,date,prayer_name,status').eq('user_id', user.id).eq('status', 'missed'),
+      ])
       if (error) throw error
-      setRecords((data as QadaRecord[]) || [])
+
+      const qadas = (data as QadaRecord[]) || []
+      const seen = new Set(qadas.map((q) => `${q.original_date}:${String(q.prayer_name).toLowerCase()}`))
+      if (missedRows?.length) {
+        for (const r of missedRows as any[]) {
+          const key = `${r.date}:${String(r.prayer_name).toLowerCase()}`
+          if (seen.has(key)) continue
+          // add derived qada record so it appears in the list
+          qadas.push({
+            id: `derived-${r.id}`,
+            user_id: user.id,
+            original_prayer_record_id: r.id,
+            original_date: r.date,
+            prayer_name: r.prayer_name,
+            status: 'pending',
+            created_at: r.updated_at ?? new Date().toISOString(),
+          })
+          seen.add(key)
+        }
+      }
+
+      setRecords(qadas)
     } catch (e: any) {
       setError(e.message || String(e))
     } finally { setLoading(false) }
