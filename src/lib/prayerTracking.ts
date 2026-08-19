@@ -26,6 +26,31 @@ export async function fetchTodayPrayerRecords(userId: string, date = todayDateSt
   return map
 }
 
+/** Fetch every prayer_records row for the user, grouped by date -> (prayerKey -> status). */
+async function fetchAllPrayerRecords(
+  userId: string,
+): Promise<Map<string, Map<string, DbPrayerStatus>>> {
+  const { data, error } = await supabase
+    .from('prayer_records')
+    .select('date, prayer_name, status')
+    .eq('user_id', userId)
+  if (error) throw error
+
+  const byDate = new Map<string, Map<string, DbPrayerStatus>>()
+  for (const row of data ?? []) {
+    if (!byDate.has(row.date)) byDate.set(row.date, new Map())
+    byDate.get(row.date)!.set(row.prayer_name.toLowerCase(), row.status as DbPrayerStatus)
+  }
+  return byDate
+}
+
+/** Local calendar date the user's account was created, or null if unavailable. */
+async function getAccountCreatedDate(userId: string): Promise<string | null> {
+  const { data } = await supabase.auth.getUser()
+  if (!data?.user || data.user.id !== userId || !data.user.created_at) return null
+  return localDateString(new Date(data.user.created_at))
+}
+
 export function mergeScheduleWithRecords(
   schedule: PrayerSchedule[],
   records: Map<string, DbPrayerStatus>,
@@ -180,15 +205,15 @@ export async function cleanupBulkAutoMisses(_userId: string, _now = new Date()):
 /**
  * Auto-miss:
  * - Today: prayers whose window has ended
- * - Yesterday: Isha only (window ends at midnight when the Today screen rolls to a new day)
+ * - Every prior day back to account creation: any prayer not completed/missed
  */
 export async function reconcileMissedPrayers(userId: string, now = new Date()): Promise<string[]> {
   const newlyMissed: string[] = []
   const todayStr = todayDateString(now)
-  const yesterdayStr = localDateString(addDays(parseLocalDate(todayStr), -1))
 
   await cleanupBulkAutoMisses(userId, now)
 
+  // --- Today: live check ---
   const todaySchedule = await getPrayerScheduleForDate(parseLocalDate(todayStr))
   const todayRecords = await fetchTodayPrayerRecords(userId, todayStr)
   for (const p of prayersNeedingMissCheck(todaySchedule, todayRecords, now)) {
@@ -200,17 +225,27 @@ export async function reconcileMissedPrayers(userId: string, now = new Date()): 
     }
   }
 
-  const ySchedule = await getPrayerScheduleForDate(parseLocalDate(yesterdayStr))
-  const yIsha = ySchedule.find((p) => p.key === 'isha')
-  if (yIsha) {
-    const yRecords = await fetchTodayPrayerRecords(userId, yesterdayStr)
-    if (prayersNeedingMissCheck([yIsha], yRecords, now).length) {
-      try {
-        const isNew = await markPrayerMissed(userId, yIsha, yesterdayStr)
-        if (isNew) newlyMissed.push(yIsha.name)
-      } catch (e) {
-        console.error('reconcile miss failed', yesterdayStr, 'isha', e)
+  // --- All prior days back to account creation ---
+  const createdStr = await getAccountCreatedDate(userId)
+  if (createdStr && createdStr < todayStr) {
+    const allRecords = await fetchAllPrayerRecords(userId)
+    const startDate = parseLocalDate(createdStr)
+    let cursor = addDays(parseLocalDate(todayStr), -1) // start at yesterday, walk backward
+
+    while (localDateString(cursor) >= localDateString(startDate)) {
+      const dateStr = localDateString(cursor)
+      const daySchedule = await getPrayerScheduleForDate(cursor)
+      const dayRecords = allRecords.get(dateStr) ?? new Map<string, DbPrayerStatus>()
+
+      for (const p of prayersNeedingMissCheck(daySchedule, dayRecords, now)) {
+        try {
+          const isNew = await markPrayerMissed(userId, p, dateStr)
+          if (isNew) newlyMissed.push(p.name)
+        } catch (e) {
+          console.error('reconcile miss failed', dateStr, p.key, e)
+        }
       }
+      cursor = addDays(cursor, -1)
     }
   }
 
