@@ -40,12 +40,19 @@ export default async function handler(req: any, res: any) {
     }
 
     const apiKey = process.env.RESEND_API_KEY
-    const from = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'joblessveelawger786@gmail.com'
+    const from = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL
 
     if (!apiKey) {
       return res.status(500).json({
         ok: false,
         error: 'RESEND_API_KEY is not configured. Add it in your hosting environment.',
+      })
+    }
+
+    if (!from) {
+      return res.status(500).json({
+        ok: false,
+        error: 'EMAIL_FROM or RESEND_FROM_EMAIL is not configured. Add a verified sender address.',
       })
     }
 
@@ -79,7 +86,8 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({ ok: true, data })
   } catch (error) {
-    console.error('Email send handler failed:', error)
-    return res.status(500).json({ ok: false, error: 'Unexpected email error' })
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('Email send handler failed:', message)
+    return res.status(500).json({ ok: false, error: 'Unexpected email error', details: message })
   }
 }
