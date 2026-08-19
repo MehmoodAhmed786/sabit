@@ -2,6 +2,7 @@
 -- Safe to re-run.
 
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS timezone text;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS email_notifications boolean NOT NULL DEFAULT false;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS pre_prayer_enabled boolean NOT NULL DEFAULT false;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS pre_prayer_minutes integer NOT NULL DEFAULT 10;
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS incomplete_prayer_enabled boolean NOT NULL DEFAULT true;

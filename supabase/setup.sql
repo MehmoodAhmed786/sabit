@@ -38,6 +38,7 @@ ALTER TABLE public.streaks ADD COLUMN IF NOT EXISTS last_evaluated_date date;
 CREATE TABLE IF NOT EXISTS public.user_settings (
   user_id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   notifications_enabled boolean NOT NULL DEFAULT true,
+  email_notifications boolean NOT NULL DEFAULT false,
   fajr_notifications boolean NOT NULL DEFAULT true,
   dhuhr_notifications boolean NOT NULL DEFAULT true,
   asr_notifications boolean NOT NULL DEFAULT true,

@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient'
 
 export type NotificationSettings = {
   notifications_enabled: boolean
+  email_notifications: boolean
   fajr_notifications: boolean
   dhuhr_notifications: boolean
   asr_notifications: boolean
@@ -38,6 +39,7 @@ export const INCOMPLETE_DELAY_OPTIONS = [
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   notifications_enabled: true,
+  email_notifications: false,
   fajr_notifications: true,
   dhuhr_notifications: true,
   asr_notifications: true,
@@ -60,6 +62,7 @@ export type NotificationToggleKey = Exclude<keyof NotificationSettings, 'pre_pra
 
 export const NOTIFICATION_TOGGLES: { key: NotificationToggleKey; label: string; hint?: string }[] = [
   { key: 'notifications_enabled', label: 'Master notifications', hint: 'Master switch for all reminders' },
+  { key: 'email_notifications', label: 'Email notifications', hint: 'Send reminders to your email inbox' },
   { key: 'fajr_notifications', label: 'Fajr prayer reminder' },
   { key: 'dhuhr_notifications', label: 'Dhuhr prayer reminder' },
   { key: 'asr_notifications', label: 'Asr prayer reminder' },
